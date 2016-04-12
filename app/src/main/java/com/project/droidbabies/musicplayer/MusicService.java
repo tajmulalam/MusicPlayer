@@ -1,5 +1,7 @@
 package com.project.droidbabies.musicplayer;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentUris;
 import android.content.Intent;
@@ -14,6 +16,7 @@ import android.view.View;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Random;
 
 /**
  * Created by Sumon on 4/6/2016.
@@ -24,7 +27,10 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
     private ArrayList<Song> songArrayList;
     private int songPosition;
     private final IBinder musicBinder = new MusicBinder();
-
+    private String songTitle = "";
+    private static final int NOTIFY_ID = 1;
+    private boolean shuffle = false;
+    private Random rand;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -45,6 +51,7 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
         songPosition = 0;
         mediaPlayer = new MediaPlayer();
         initMusicPlayer();
+        rand = new Random();
     }
 
     public void initMusicPlayer() {
@@ -64,6 +71,7 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
     public void playSong() {
         mediaPlayer.reset();
         Song playSong = songArrayList.get(songPosition);
+        songTitle = playSong.getTitle();
         long currentSong = playSong.getSongId();
         Uri trackUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, currentSong);
         try {
@@ -78,6 +86,13 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
         this.songPosition = songIndex;
     }
 
+    public void setShuffle() {
+        if (shuffle)
+            shuffle = false;
+        else
+            shuffle = true;
+    }
+
     public class MusicBinder extends Binder {
         MusicService getMusicService() {
             return MusicService.this;
@@ -87,17 +102,37 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
 
     @Override
     public void onCompletion(MediaPlayer mp) {
-
+        if (mediaPlayer.getCurrentPosition() > 0) {
+            mediaPlayer.reset();
+            playNext();
+        }
     }
 
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
+        mediaPlayer.reset();
         return false;
     }
 
     @Override
     public void onPrepared(MediaPlayer mp) {
         mp.start();
+        Intent notiIntent = new Intent(this, MainActivity.class);
+        notiIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notiIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Builder builder = new Notification.Builder(this);
+        builder.setContentIntent(pendingIntent)
+                .setSmallIcon(R.mipmap.ic_play)
+                .setTicker(songTitle)
+                .setOngoing(true)
+                .setContentTitle("Playing")
+
+                .setContentText(songTitle);
+
+        Notification notification = builder.build();
+        startForeground(NOTIFY_ID, notification);
+//        PendingIntent pendingIntentForService = PendingIntent.getActivity(this, 0, notiIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
     }
 
     @Override
@@ -105,5 +140,59 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
 
     }
 
+    public int getSongPosition() {
+        return mediaPlayer.getCurrentPosition();
+    }
 
+    public int getDuration() {
+        return mediaPlayer.getDuration();
+    }
+
+    public boolean isPlaying() {
+        return mediaPlayer.isPlaying();
+    }
+
+    public void pausePlayer() {
+        mediaPlayer.pause();
+    }
+
+    public void seek(int pos) {
+        mediaPlayer.seekTo(pos);
+    }
+
+    public void go() {
+        mediaPlayer.start();
+    }
+
+    public void playPrev() {
+        songPosition--;
+        if (songPosition <= 0)
+            songPosition = songArrayList.size() - 1;
+        playSong();
+    }
+
+    public void playNext() {
+        if (shuffle) {
+            int newSong = songPosition;
+            while (newSong == songPosition) {
+                newSong = rand.nextInt(songArrayList.size());
+            }
+            songPosition = newSong;
+        } else {
+            songPosition++;
+            if (songPosition >= songArrayList.size())
+                songPosition = 0;
+
+        }
+        playSong();
+    }
+
+    public void stop() {
+        mediaPlayer.stop();
+    }
+
+    @Override
+    public void onDestroy() {
+        stopForeground(true);
+    }
 }

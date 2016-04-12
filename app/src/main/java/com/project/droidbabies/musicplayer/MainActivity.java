@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -21,19 +22,25 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.animation.Animation;
 import android.widget.ListView;
+import android.widget.MediaController;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 
 public class MainActivity extends AppCompatActivity
-        implements NavigationView.OnNavigationItemSelectedListener {
+        implements NavigationView.OnNavigationItemSelectedListener, MediaController.MediaPlayerControl {
     private ArrayList<Song> songList;
     private ListView songView;
     private SongAdapter adapter;
     private MusicService musicService;
     private Intent playIntent;
     private boolean musicBound = false;
+    private MusicController controller;
+    private boolean paused = false, playBackPaused = false;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,7 +78,7 @@ public class MainActivity extends AppCompatActivity
             }
         });
 
-
+        setController();
     }
 
     private ServiceConnection musicConnection = new ServiceConnection() {
@@ -112,6 +119,7 @@ public class MainActivity extends AppCompatActivity
                     (android.provider.MediaStore.Audio.Media._ID);
             int artistColumn = musicCursor.getColumnIndex
                     (android.provider.MediaStore.Audio.Media.ARTIST);
+
             //add songs to list
             do {
                 long thisId = musicCursor.getLong(idColumn);
@@ -123,9 +131,56 @@ public class MainActivity extends AppCompatActivity
         }
     }
 
+
+    private void setController() {
+        controller = new MusicController(this);
+        //set previous and next button listeners
+        controller.setPrevNextListeners(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                playNext();
+            }
+        }, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                playPrev();
+            }
+        });
+        //set and show
+        controller.setMediaPlayer(this);
+        controller.setAnchorView(findViewById(R.id.song_list));
+        controller.setBackgroundColor(Color.parseColor("#03A9F4"));
+        controller.setEnabled(true);
+    }
+
     public void songPicked(View view) {
         musicService.setSong(Integer.parseInt(view.getTag().toString()));
         musicService.playSong();
+        if (playBackPaused) {
+            setController();
+            playBackPaused = false;
+        }
+        controller.show(0);
+        startService(new Intent(MusicService.ACTION_PLAY));
+    }
+
+    private void playNext() {
+        musicService.playNext();
+        if (playBackPaused) {
+            setController();
+            playBackPaused = false;
+        }
+        controller.show(0);
+        startService(new Intent(MusicService.ACTION_SKIP));
+    }
+
+    private void playPrev() {
+        musicService.playPrev();
+        if (playBackPaused) {
+            setController();
+            playBackPaused = false;
+        }
+        controller.show(0);
     }
 
     @Override
@@ -137,12 +192,14 @@ public class MainActivity extends AppCompatActivity
             super.onBackPressed();
         }
     }
+
     @Override
     protected void onDestroy() {
         stopService(playIntent);
-        musicService=null;
+        musicService = null;
         super.onDestroy();
     }
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
@@ -182,5 +239,97 @@ public class MainActivity extends AppCompatActivity
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         drawer.closeDrawer(GravityCompat.START);
         return true;
+    }
+
+    @Override
+    public void start() {
+        musicService.go();
+        startService(new Intent(MusicService.ACTION_PLAY));
+    }
+
+    @Override
+    public void pause() {
+        playBackPaused = true;
+        musicService.pausePlayer();
+        startService(new Intent(MusicService.ACTION_PAUSE));
+    }
+
+    @Override
+    public int getDuration() {
+        if (musicService != null && musicBound && musicService.isPlaying()) {
+            return musicService.getDuration();
+        } else {
+            return 0;
+        }
+    }
+
+    @Override
+    public int getCurrentPosition() {
+        if (musicService != null && musicBound && musicService.isPlaying()) {
+            return musicService.getSongPosition();
+        } else {
+            return 0;
+
+        }
+    }
+
+
+    @Override
+    public void seekTo(int pos) {
+        musicService.seek(pos);
+    }
+
+    @Override
+    public boolean isPlaying() {
+        if (musicService != null && musicBound)
+            return musicService.isPlaying();
+        return false;
+    }
+
+    @Override
+    public int getBufferPercentage() {
+        return 0;
+    }
+
+    @Override
+    public boolean canPause() {
+        return true;
+    }
+
+    @Override
+    public boolean canSeekBackward() {
+        return true;
+    }
+
+    @Override
+    public boolean canSeekForward() {
+        return true;
+    }
+
+    @Override
+    public int getAudioSessionId() {
+        return 0;
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        paused = true;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (paused) {
+            setController();
+            paused = false;
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        controller.hide();
+        super.onStop();
+
     }
 }
